@@ -1,6 +1,6 @@
 provider "aws" {
   region  = "us-east-1"
-  profile = "dev-admin"
+  profile = "escrowdev"
 }
 
 data "http" "myip" {
@@ -82,7 +82,7 @@ resource "aws_route_table" "devassoc-nat-rt" {
   vpc_id = aws_vpc.devassoc-vpc.id
 
   route {
-    cidr_block = "0.0.0.0/0"
+    cidr_block     = "0.0.0.0/0"
     nat_gateway_id = aws_nat_gateway.devassoc-nat.id
   }
 
@@ -179,6 +179,40 @@ resource "aws_security_group" "restricted-http-ssh-sg" {
   }
 }
 
+resource "aws_security_group" "open-http-ssh-sg" {
+  name        = "open-http-ssh"
+  description = "HTTP and SSH from Anywhere."
+  vpc_id      = aws_vpc.devassoc-vpc.id
+
+  ingress {
+    description = "HTTP from anywhere"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "SSH from anywhere"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "HTTPS to internet"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "devassoc-open-ssh-http"
+  }
+}
+
 resource "aws_key_pair" "devassoc-key" {
   key_name   = "devassoc-key"
   public_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCu6mAcAaZ4DDdUB9YZ66d4IurZUuPTye14hySC9FNd3rpeIFtja76dXU/Rdq0iV8eZEN0SKvE7movTG4oJohHeacUSAXramNLRQgF0DLNimW413bsdd4nbtzUxqNBzanLtcyASkaIaBkGRhglQfRfppNC+YaWFVrPNFVVRn0gVrKgQyAe1wFZgoyPFl4IXhAfqwIzgDpgOaXvvn4GnP0GHu+/eYZ3riZ5qTm1uiVAwmJsKL8aa1Ur+F53REtayOgC5EpnNRtluyzEIM/+yhubXw7aoufDqxdvTYp7CbM3vFjsAoNft5FRBbNsY0dHKHduCTKNsIzawog+iEfa/bobCOt/DSkoPvFfy7J88hefK3aUoP+UZJeeM886N3PaeTJyAT6w8FSzelRlkG9X+iY0fIaxyYQcAsrVTHCJtY//KRLYy5jJuWorWcExBn4ELVgaS4biwBuf/Mr9ujITj6sSB1/YuzPHMrk0OSx3bkS94WaflJDc7Dz1ClDTFPgKaTu0= chukky@Emmanuels-MacBook-Pro-2.local"
@@ -204,6 +238,20 @@ resource "aws_instance" "webserver-1" {
   }
 
   depends_on = [aws_key_pair.devassoc-key, aws_iam_role.devassoc-webserver-role]
+}
+
+resource "aws_instance" "webserver-1-private" {
+  ami                    = var.aws-ami
+  instance_type          = "t2.micro"
+  private_ip             = lookup(var.private-ipa, "app1", "172.31.101.21")
+  vpc_security_group_ids = [aws_security_group.open-http-ssh-sg.id]
+  subnet_id              = aws_subnet.private-1.id
+  key_name               = "devassoc-key"
+  iam_instance_profile   = aws_iam_instance_profile.devassoc-instance-profile.name
+  user_data              = file("server-polly.txt")
+  tags = {
+    Name = "private-instance"
+  }
 }
 
 resource "aws_iam_instance_profile" "devassoc-instance-profile" {
